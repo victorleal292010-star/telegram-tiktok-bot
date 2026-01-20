@@ -1,67 +1,50 @@
-import requests
 import os
+import requests
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters
+)
 
-# El token se pondrá luego en Railway (NO aquí)
-TOKEN = os.getenv("BOT_TOKEN")
-
-# IDs premium (luego puedes agregar más)
-PREMIUM_USERS = [
-    123456789  # luego pondremos tu ID real
-]
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "👋 Hola, soy tu bot de TikTok\n\n"
-        "📥 Envíame un link de TikTok\n"
-        "🎬 Video sin marca GRATIS\n"
-        "🔒 Audio MP3 solo PREMIUM"
+        "👋 Hola!\n\n"
+        "Envíame un enlace de TikTok y te descargaré el video sin marca de agua.\n"
+        "🎵 El MP3 es solo para usuarios PREMIUM."
     )
 
-async def handle_tiktok(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    link = update.message.text.strip()
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
 
-    if "tiktok.com" not in link:
-        await update.message.reply_text("❌ Ese no es un link válido de TikTok")
+    if "tiktok.com" not in text:
+        await update.message.reply_text("❌ Envíame un enlace válido de TikTok.")
         return
 
-    await update.message.reply_text("⏳ Procesando, espera un momento...")
+    # API Tikwm
+    api_url = f"https://tikwm.com/api/?url={text}"
+    r = requests.get(api_url).json()
 
-    try:
-        api_url = f"https://tikwm.com/api/?url={link}"
-        response = requests.get(api_url, timeout=20)
-        data = response.json()
+    if not r.get("data"):
+        await update.message.reply_text("❌ No pude descargar ese video.")
+        return
 
-        if "data" not in data:
-            await update.message.reply_text("⚠️ No se pudo obtener el video")
-            return
+    video_url = r["data"]["play"]
+    await update.message.reply_video(video_url)
 
-        video_url = data["data"].get("play")
-        audio_url = data["data"].get("music")
-        title = data["data"].get("title", "tiktok")
+async def main():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-        # Enviar video (gratis)
-        if video_url:
-            await update.message.reply_video(video_url)
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-        # Enviar audio solo premium
-        if user_id in PREMIUM_USERS:
-            if audio_url:
-                await update.message.reply_audio(audio_url, title=title)
-        else:
-            await update.message.reply_text(
-                "🔒 El audio MP3 es PREMIUM\n"
-                "💰 Escríbenos para activar el acceso"
-            )
+    print("🤖 Bot en ejecución...")
+    await app.run_polling()
 
-    except Exception as e:
-        await update.message.reply_text("❌ Error al procesar el enlace")
-
-app = ApplicationBuilder().token(TOKEN).build()
-app.add_handler(CommandHandler("start", start))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_tiktok))
-
-print("🤖 Bot en ejecución")
-app.run_polling()
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
